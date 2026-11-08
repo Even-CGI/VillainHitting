@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>打小人</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #151019;
+    --gold: #ffd166;
+    --ember: #f0932b;
+    --cinnabar: #c8321f;
+    --paper: #f4f1e8;
+    --mist: #7f8fa6;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    height: 100dvh;
+    background: var(--night);
+    color: var(--paper);
+    font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #stage {
+    position: relative;
+    box-shadow: 0 0 0 1px #2b1a17, 0 24px 80px rgba(0,0,0,.45);
+    container-type: inline-size;
+  }
+  canvas {
+    display: block;
+    background: var(--night);
+    cursor: crosshair;
+    touch-action: none;
+  }
+  #hud, #vignette, .grade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  #hud {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 14px 16px 12px;
+  }
+  .statrow {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: rgba(21,16,25,.72);
+    border: 1px solid rgba(255,209,102,.35);
+    border-radius: 8px;
+    padding: 6px 10px 7px;
+    min-width: 72px;
+    box-shadow: 0 0 0 1px #151019;
+  }
+  .stat b {
+    display: block;
+    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--gold);
+  }
+  .stat span, .hint {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--mist);
+  }
+  .stat.danger b { color: #ff4d4d; }
+  .stat.danger { animation: pulse 0.6s ease-in-out infinite; }
+  #hpstat { position: relative; }
+  #hpstat .hp-pop {
+    position: absolute;
+    left: 8px;
+    bottom: 18px;
+    margin: 0;
+    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+    color: #ff4d4d;
+    text-shadow: 0 1px 0 #151019, 1px 0 0 #151019, -1px 0 0 #151019, 0 -1px 0 #151019;
+    pointer-events: none;
+    animation: hp-jump 0.75s ease-out forwards;
+    z-index: 4;
+  }
+  .hpbar {
+    display: flex;
+    gap: 3px;
+    margin-top: 4px;
+  }
+  .pip {
+    width: 10px;
+    height: 12px;
+    border-radius: 2px;
+    background: #3a241f;
+    box-shadow: inset 0 0 0 1px #151019;
+  }
+  .pip.on { background: var(--cinnabar); }
+  .incense {
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    pointer-events: none;
+  }
+  .stick {
+    position: relative;
+    width: 12px;
+    height: 104px;
+    border-radius: 6px;
+    background: linear-gradient(#8f8f8f, #8f8f8f) top / 100% var(--burn, 0%) no-repeat,
+                linear-gradient(#c8321f, #f0932b);
+    box-shadow: 0 0 0 2px #151019;
+  }
+  .flame {
+    position: absolute;
+    left: 50%;
+    top: var(--burn, 0%);
+    width: 18px;
+    height: 36px;
+    margin-left: -9px;
+    transform: translateY(-100%);
+    transform-origin: 50% 100%;
+    background: linear-gradient(#fff6c8 0%, #ffd166 22%, #f0932b 55%, #c8321f 82%, #8a1c12 100%);
+    clip-path: polygon(50% 0%, 74% 32%, 92% 62%, 68% 100%, 32% 100%, 8% 62%, 26% 32%);
+    filter: drop-shadow(0 0 6px #f0932b);
+    animation: flicker 0.14s infinite alternate;
+  }
+  .flame::before,
+  .flame::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    transform-origin: 50% 100%;
+  }
+  .flame::before {
+    bottom: 2px;
+    width: 8px;
+    height: 16px;
+    margin-left: -4px;
+    background: linear-gradient(#fff, #fff6c8 40%, #ffd166 75%, transparent);
+    clip-path: polygon(50% 0%, 85% 45%, 70% 100%, 30% 100%, 15% 45%);
+    animation: flicker-core 0.11s infinite alternate;
+  }
+  .flame::after {
+    bottom: 0;
+    width: 7px;
+    height: 18px;
+    margin-left: -10px;
+    background: linear-gradient(#ffd166, #f0932b 60%, transparent);
+    clip-path: polygon(60% 0%, 100% 55%, 70% 100%, 20% 100%, 0% 50%);
+    opacity: 0.85;
+    animation: flicker-side 0.18s infinite alternate;
+  }
+  .smoke {
+    position: absolute;
+    left: 50%;
+    top: var(--burn, 0%);
+    width: 0;
+    height: 0;
+    transform: translateY(-90%);
+    pointer-events: none;
+  }
+  .smoke i {
+    position: absolute;
+    left: -8px;
+    bottom: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(244,241,232,0.7);
+    filter: blur(1.5px);
+    opacity: 0;
+    animation: smoke 2.6s ease-out infinite;
+  }
+  .smoke i:nth-child(2) { animation-delay: 0.85s; background: rgba(180,186,196,0.55); }
+  .smoke i:nth-child(3) { animation-delay: 1.7s; }
+  .stick.still .flame,
+  .stick.still .flame::before,
+  .stick.still .flame::after,
+  .stick.still .smoke i {
+    animation-play-state: paused;
+  }
+  .hint { padding-left: 2px; }
+  #vignette {
+    background:
+      radial-gradient(ellipse at center, transparent 45%, rgba(255,77,77,.0) 70%, rgba(255,77,77,.85) 100%);
+    opacity: 0;
+    mix-blend-mode: screen;
+  }
+  .grade {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .grade::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(21,16,25,.55);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .grade.show::before { opacity: 1; }
+  .grade:not(.show) .card { display: none; }
+  .grade .card {
+    position: relative;
+    z-index: 2;
+  }
+  .grade.show { pointer-events: auto; }
+  .card {
+    width: min(520px, 92%);
+    max-height: 92vh;
+    overflow: auto;
+    text-align: center;
+    background: linear-gradient(180deg, #2b1a17, #151019 70%);
+    border: 1px solid var(--gold);
+    border-radius: 16px;
+    padding: 28px 26px 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .card h1 {
+    margin: 0;
+    font-family: "Noto Serif TC", "PMingLiU", "MingLiU", serif;
+    font-weight: 900;
+    font-size: 48px;
+    letter-spacing: 0.12em;
+    color: var(--gold);
+  }
+  .card .sub {
+    margin: 6px 0 0;
+    color: var(--paper);
+    font-size: 16px;
+  }
+  .card .mark {
+    font-family: "Noto Serif TC", "PMingLiU", serif;
+    font-size: 72px;
+    line-height: 1;
+    margin: 8px 0;
+    color: var(--gold);
+  }
+  .card p { margin: 8px 0; color: #f4f1e8; }
+  .card .meta {
+    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    color: var(--mist);
+    font-size: 13px;
+  }
+  button {
+    pointer-events: auto;
+    margin-top: 16px;
+    background: var(--cinnabar);
+    color: #fff8ea;
+    border: 0;
+    border-radius: 999px;
+    padding: 10px 28px;
+    font: 700 16px "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    letter-spacing: 0.14em;
+    cursor: pointer;
+  }
+  button:hover { background: #e0442e; }
+  #chantbtn { margin-left: 8px; background: #c9841a; }
+  #chantbtn:hover { background: #e09a2a; }
+  #blitzbtn { margin-left: 8px; background: #2f6f4e; }
+  #blitzbtn:hover { background: #3d8a62; }
+  .keys { margin-top: 12px; color: var(--mist); font-size: 12px; letter-spacing: 0.06em; }
+  #armory { margin-top: 14px; text-align: left; }
+  #wallet { text-align: center; color: var(--gold); font-size: 13px; letter-spacing: 0.06em; }
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .title-row h1 { margin: 0; }
+  #adbtn {
+    flex: none;
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    background: #3a2a24;
+  }
+  #adbtn:hover { background: #5a3a30; }
+  #adbtn:disabled { opacity: 0.55; cursor: default; }
+  #wepnote { min-height: 1.2em; margin: 6px 0 0; text-align: center; color: #ffb4a8; font-size: 12px; }
+  .wep {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255,209,102,.28);
+    border-radius: 10px;
+  }
+  .wep.on { border-color: var(--gold); background: rgba(255,209,102,.08); }
+  .wep b { display: block; font-size: 14px; }
+  .wep .statline { color: var(--mist); font-size: 12px; }
+  .wep .acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .wep button {
+    margin-top: 0;
+    padding: 5px 8px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    background: #3a2a24;
+  }
+  .wep button:hover { background: #5a3a30; }
+  .wep button:disabled { opacity: 0.4; cursor: default; }
+  .wep b.wep-flash { animation: wep-gold 0.55s ease; }
+  .wep .statline.wep-jump { animation: wep-pop 0.4s ease; }
+  .wep.wep-break { animation: wep-ring 0.6s ease; }
+  @keyframes wep-gold {
+    0% { color: #fff6c8; }
+    45% { color: var(--gold); }
+    100% { color: var(--paper); }
+  }
+  @keyframes wep-pop {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.08); color: var(--gold); }
+    100% { transform: scale(1); }
+  }
+  @keyframes wep-ring {
+    40% { box-shadow: 0 0 0 2px var(--gold); }
+  }
+  .touchbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  .touch-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .mini {
+    margin: 0;
+    padding: 8px 14px;
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    background: rgba(21,16,25,.82);
+    color: var(--gold);
+    border: 1px solid rgba(255,209,102,.45);
+    touch-action: manipulation;
+    pointer-events: auto;
+  }
+  body.portrait #hud { padding: 8px 8px 10px; }
+  body.portrait .statrow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  body.portrait .stat { min-width: 0; padding: 6px 8px; }
+  body.portrait .stat b { font-size: 16px; }
+  body.portrait .touchbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  body.portrait .touch-actions { width: 100%; }
+  body.portrait .mini {
+    flex: 1;
+    padding: 12px 4px;
+    font-size: 15px;
+  }
+  body.portrait .hint { text-align: center; }
+  body.portrait .incense {
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  body.portrait .card { width: min(420px, 92vw); max-height: 88dvh; overflow: auto; }
+  body.portrait .stick { height: 72px; }
+  @media (max-height: 520px) {
+    .card { padding: 12px 14px; }
+    .card h1 { font-size: 28px; }
+    .card .mark { font-size: 42px; margin: 2px 0; }
+    .card .sub, .card p { margin: 4px 0; font-size: 14px; }
+    button { margin-top: 8px; padding: 8px 20px; }
+  }
+  @container (max-width: 760px) {
+    #hud { padding: 6px 8px; }
+    .stat { min-width: 0; padding: 3px 6px; }
+    .stat b { font-size: 14px; }
+    .stat span, .hint, .keys { font-size: 10px; }
+    .pip { width: 7px; height: 9px; }
+    .stick { height: 64px; width: 8px; }
+    .flame { width: 12px; height: 24px; margin-left: -6px; }
+    .flame::before { width: 5px; height: 11px; margin-left: -2.5px; }
+    .flame::after { width: 5px; height: 12px; margin-left: -7px; }
+    .incense { right: 10px; }
+    .mini { padding: 6px 8px; font-size: 12px; }
+    .card { padding: 16px 14px; }
+    .card h1 { font-size: 32px; }
+    .card .mark { font-size: 52px; }
+    .card .sub, .card p { font-size: 14px; }
+  }
+  @media (max-width: 760px) {
+    .incense { right: 10px; }
+    .stick { height: 64px; width: 8px; }
+    .flame { width: 12px; height: 24px; margin-left: -6px; }
+    .flame::before { width: 5px; height: 11px; margin-left: -2.5px; }
+    .flame::after { width: 5px; height: 12px; margin-left: -7px; }
+  }
+  @keyframes pulse { 50% { filter: brightness(1.6); } }
+  @keyframes hp-jump {
+    0% { transform: translateY(6px) scale(0.85); opacity: 0; }
+    20% { transform: translateY(0) scale(1.12); opacity: 1; }
+    100% { transform: translateY(-10px) scale(1); opacity: 0; }
+  }
+  @keyframes flicker {
+    from { transform: translateY(-100%) scale(1, 1) rotate(-6deg); }
+    to { transform: translateY(-104%) scale(0.82, 1.16) rotate(7deg); }
+  }
+  @keyframes flicker-core {
+    from { transform: scale(1, 1) rotate(-3deg); }
+    to { transform: scale(0.7, 1.2) rotate(4deg); }
+  }
+  @keyframes flicker-side {
+    from { transform: scale(1, 0.8) rotate(-8deg); opacity: 0.45; }
+    to { transform: scale(1.15, 1.15) rotate(6deg); opacity: 0.9; }
+  }
+  @keyframes smoke {
+    0% { transform: translate(0, 0) scale(0.35); opacity: 0; }
+    18% { opacity: 0.65; }
+    100% { transform: translate(-18px, -56px) scale(1.6); opacity: 0; }
+  }
+  .smoke i:nth-child(2) { animation-name: smoke-b; }
+  .smoke i:nth-child(3) { animation-name: smoke-c; }
+  @keyframes smoke-b {
+    0% { transform: translate(0, 0) scale(0.3); opacity: 0; }
+    20% { opacity: 0.5; }
+    100% { transform: translate(10px, -64px) scale(1.45); opacity: 0; }
+  }
+  @keyframes smoke-c {
+    0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+    22% { opacity: 0.45; }
+    100% { transform: translate(-6px, -48px) scale(1.2); opacity: 0; }
+  }
+#toast{position:absolute;z-index:999;top:88px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100% - 32px));pointer-events:none}
+.toast-item{padding:10px 14px;background:rgba(21,16,25,.92);border:1px solid rgba(255,209,102,.35);border-radius:10px;color:red;font-size:13px;opacity:1;transition:opacity .15s}
+.toast-item.toast-hide{opacity:0}
+body.portrait #toast{top:116px}
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c" width="960" height="540"></canvas>
+    <div id="vignette"></div>
+    <div id="hud">
+		<div id="toast" aria-live="polite" aria-relevant="additions"></div>
+      <div class="statrow">
+        <div class="stat" id="hpstat"><span>師傅血</span><b id="hptext">10</b><div class="hpbar" id="pips"></div></div>
+        <div class="stat"><span>關卡</span><b id="leveltext">1/5</b></div>
+        <div class="stat"><span id="leftlabel">剩餘小人</span><b id="lefttext">0</b></div>
+        <div class="stat"><span>命中</span><b id="acctext">—</b></div>
+        <div class="stat"><span>出手</span><b id="shottext">0</b></div>
+        <div class="stat" id="mutestat"><span>聲</span><b id="mutetext">開</b></div>
+      </div>
+      <div class="touchbar">
+        <div class="hint">點擊射擊 · 打頭 −2 · 打身 −1</div>
+        <div class="touch-actions">
+          <button id="pausebtn" class="mini" type="button">暫停</button>
+          <button id="endbtn" class="mini" type="button">結束</button>
+          <button id="retry" class="mini" type="button">重來</button>
+          <button id="mutebtn" class="mini" type="button">靜音</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="grade show" id="overlay">
+    <div class="incense" title="一支香，三十秒"><div class="stick" id="stick"><div class="flame"></div><div class="smoke"><i></i><i></i><i></i></div></div></div>
+    <div class="card">
+      <div class="title-row">
+        <h1 id="title">打小人</h1>
+        <button id="adbtn" type="button">睇廣告</button>
+      </div>
+      <p class="sub" id="subtitle">打飛小人，洩黴氣！</p>
+      <div class="mark" id="mark" style="display:none"></div>
+      <p id="line"></p>
+      <p class="meta" id="meta"></p>
+      <button id="go" type="button">射擊</button>
+      <button id="chantbtn" type="button">跟beat打</button>
+      <button id="blitzbtn" type="button">無限打</button>
+      <div class="keys">射擊撳畫面就打。跟beat打隨機英文或者廣東話，等反應圈縮到個圈先撳。無限打三十秒，正前方一隻，點中就打飛。</div>
+      <div class="keys">射擊用裝備緊嘅鞋。打頭係攻擊兩倍。任何模式開一場扣 1 耐用度。打完射擊：C +8、B +12、A +18、S +26 小人幣，過晒五關再 +1 突破券。跟beat打同無限打打完一場，有撳過就 +20 小人幣，成場冇撳就 +0。</div>
+      <div id="armory">
+        <div id="wallet"></div>
+        <div id="weaponlist"></div>
+        <p id="wepnote"></p>
+      </div>
+    </div>
+  </div>
+  <script src="level.js?v=speed2"></script>
+  <script src="enemy.js?v=weapon1"></script>
+  <script src="weapon.js?v=8"></script>
+  <script src="chant.js?v=en1"></script>
+  <script src="rhythm.js?v=en1"></script>
+  <script src="game.js?v=wepfx"></script>
+</body>
+</html>
