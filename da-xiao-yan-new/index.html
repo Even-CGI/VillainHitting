@@ -286,8 +286,8 @@
   button:hover { background: #e0442e; }
   #chantbtn { margin-left: 8px; background: #c9841a; }
   #chantbtn:hover { background: #e09a2a; }
-  #blitzbtn { margin-left: 8px; background: #2f6f4e; }
-  #blitzbtn:hover { background: #3d8a62; }
+  #unbtn { margin-left: 8px; background: #2f6f4e; }
+  #unbtn:hover { background: #3d8a62; }
   .keys { margin-top: 12px; color: var(--mist); font-size: 12px; letter-spacing: 0.06em; }
   #armory { margin-top: 14px; text-align: left; }
   #wallet { text-align: center; color: var(--gold); font-size: 13px; letter-spacing: 0.06em; }
@@ -510,10 +510,9 @@ body.portrait #toast{top:116px}
       <p class="meta" id="meta"></p>
       <button id="go" type="button">關卡</button>
       <button id="chantbtn" type="button">跟beat打</button>
-      <button id="blitzbtn" type="button">無限打</button>
-      <button id="unbtn" type="button">無限制</button>
-      <div class="keys">關卡撳畫面就打。跟beat打隨機英文或者廣東話，等反應圈縮到個圈先撳。無限打三十秒，正前方一隻，點中就打飛。</div>
-      <div class="keys">關卡用裝備緊嘅鞋。打頭係攻擊兩倍。任何模式開一場扣 1 耐用度。打完關卡：C +8、B +12、A +18、S +26 小人幣。每5關完成 +1 突破券。跟beat打同無限打第一次完成 +1 突破券（每屬開場一次）；有撳過就 +20 小人幣，成場冇撳就 +0。無限制同關卡但無武器無冷降，固定打身−1／打頭−2；有撳過就 +20 小人幣，第一次廿關通場 +1 突破券。</div>
+      <button id="unbtn" type="button">無CD</button>
+      <div class="keys">關卡撳畫面就打。跟beat打隨機英文或者廣東話，等反應圈縮到個圈先撳。</div>
+      <div class="keys">任何模式開一場扣 1 耐用度，關卡用裝備緊嘅鞋。打頭係攻擊兩倍。打完關卡：C +8、B +12、A +18、S +26 小人幣。每完成5關會 +1 突破券。跟beat打第一次完成 +1 突破券；有撳過就 +20 小人幣，成場冇撳就 +0。<br>無CD模式冇武器冷卻時間，固定打身−1／打頭−2；連打最高至×5，打唔中目標會reset至x1；有撳過就+20小人幣，開場冇撳就+0，廿關過哂就+1突破券。防護盾可擋1~5次攻擊，回血每次過關自動回+0.5～2.5生命。</div>
       <div id="armory">
         <div id="wallet"></div>
         <div id="weaponlist"></div>
@@ -522,10 +521,10 @@ body.portrait #toast{top:116px}
     </div>
   </div>
   <script src="level.js?v=speed2"></script>
-  <script src="enemy.js?v=weapon1"></script>
-  <script src="weapon.js?v=8"></script>
+  <script src="enemy.js?v=hit1"></script>
+  <script src="weapon.js?v=shield1"></script>
   <script src="chant.js?v=en1"></script>
   <script src="rhythm.js?v=en1"></script>
-  <script src="game.js?v=wepfx"></script>
+  <script src="game.js?v=acc1"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ const lineEl = document.getElementById("line");
 const metaEl = document.getElementById("meta");
 const goBtn = document.getElementById("go");
 const chantBtn = document.getElementById("chantbtn");
-const blitzBtn = document.getElementById("blitzbtn");
+const blitzBtn = document.createElement("b"); // 無限打 mode removed; stays detached so writes are inert
 const unBtn = document.getElementById("unbtn");
 const vignette = document.getElementById("vignette");
 const stick = document.getElementById("stick");
@@ -40,6 +40,10 @@ const luckSheet = new Image();
 luckSheet.src = "luck-walk.png?v=1";
 const LUCK_COLS = 8;
 const LUCK_FRAMES = 32;
+const badluckSheet = new Image();
+badluckSheet.src = "badluck-walk.png?v=1";
+const BADLUCK_COLS = 6;
+const BADLUCK_FRAMES = 12;
 
 const PLAYER_MAX = 10;
 const COPY = {
@@ -82,6 +86,8 @@ let audioCtx = null;
 let last = performance.now();
 let bossGong = false;
 let blitzKills = 0;
+let shieldHits = 0; // attacks the shield can still block this run
+let unlimitedCombo = 0;
 let modeClicks = 0;
 
 let appliedPortrait = null;
@@ -202,6 +208,7 @@ function resetRun() {
   bossGong = false;
   paused = false;
   blitzKills = 0;
+  unlimitedCombo = 0;
   modeClicks = 0;
   weaponCd = 0;
   weaponCdMax = 0;
@@ -226,6 +233,8 @@ function beginRun() {
   if (!spendDurability()) return;
   stopRhythm();
   resetRun();
+  shieldHits = shieldGuard();
+  useGearOnRunStart(); // shield loses 1 durability per run
   mode = "shoot";
   goBtn.dataset.action = "shoot";
   blitzBtn.textContent = "無限打";
@@ -265,8 +274,11 @@ function beginBlitz() {
 
 // practice ladder: same 20 levels, fixed −1/−2 damage, no cooldown, no weapon, no rewards, no tickets
 function beginUnlimited() {
+  if (!spendDurability()) return; // weapons lose 1 durability in every mode
   stopRhythm();
   resetRun();
+  shieldHits = shieldGuard();
+  useGearOnRunStart(); // shield loses 1 durability per run
   mode = "unlimited";
   goBtn.dataset.action = "shoot";
   state = "cutscene";
@@ -275,8 +287,10 @@ function beginUnlimited() {
 }
 
 function blitzGrade() {
-  if (blitzKills >= 40) return "S";
-  if (blitzKills >= 25) return "A";
+  // rescaled from the old combo-scored thresholds by the observed avg multiplier 1.3,
+  // so a 49-kill playtest still tops out at S on raw kills
+  if (blitzKills >= 42) return "S";
+  if (blitzKills >= 23) return "A";
   if (blitzKills >= 12) return "B";
   return "C";
 }
@@ -320,7 +334,6 @@ function weaponImpact(x, y) {
     const n = Math.max(3, Math.round(atk + 1));
     puff(x, y, "#fff6c8", n, 90, 0.22, "spark");
     puff(x, y, "#c8321f", 2, 40, 0.18, "spark");
-    if (level >= 5) shake = Math.max(shake, 6);
   } else if (id === "ballet") {
     puff(x, y, "#f4f1e8", 2 + level, 36, 0.24, "bit");
   } else {
@@ -397,25 +410,46 @@ function shoot(x, y) {
     if (!res.used) continue;
     if (res.dmg === 0) {
       if (res.reason === "shield") shots++;
+      if (res.reason === "dodge") {
+        shots++; // 霉 jinx: swing consumed and counted as a miss…
+        if (mode === "unlimited") unlimitedCombo = 0; // …and it breaks the combo, like a whiff
+      }
       weaponImpact(enemy.x, enemy.y);
       floater(enemy.x, enemy.y - 36, res.reason === "shield" ? "擋" : "霉", res.reason === "shield" ? "#c0c4cc" : "#c77fb3", false);
       return;
     }
-    const dmg = res.dmg;
+    if (mode === "unlimited") unlimitedCombo++;
+    const mult = mode === "unlimited" ? comboMult(unlimitedCombo) : 1;
+    if (mult > 1) {
+      enemy.hp -= res.dmg * (mult - 1);
+      // shortcut: bonus kill skips the bitter death-chain, extract it if that ever matters
+      if (enemy.hp <= 0 && !enemy.dead) { launchEnemy(enemy); removeEnemy(enemy); }
+    }
+    const dmg = res.dmg * mult;
     shots++;
     hits++;
-    const gold = Math.abs(dmg - attack * 2) < 0.001;
+    const gold = Math.abs(res.dmg - attack * 2) < 0.001;
     if (gold) crits++;
     const color = gold ? "#ffd166" : "#ff5a3c";
     weaponImpact(enemy.x, enemy.y);
     if (gold) paperBurst(enemy.x, enemy.y - 8, "#ffd166", 5);
     floater(enemy.x, enemy.y - 36, "-" + fmtNum(dmg), color, gold);
     if (gold) floater(enemy.x + 18, enemy.y - 58, "哎呀", "#fff3c4", false);
+    if (mult > 1) floater(enemy.x - 18, enemy.y - 58, "打 ×" + mult, "#ffd166", false);
     if (before - dmg <= 0) paperBurst(enemy.x, enemy.y, "#f4f1e8", 4);
     if (gold) sfxCrit();
     return;
   }
+  shots++; // a swing at nothing is a shot that missed — lowers 命中率
+  if (mode === "unlimited") {
+    unlimitedCombo = 0; // 地面click = miss judged by system, combo back to ×1
+    floater(x, y - 30, "×1", "#8b8b8b", false);
+  }
 }
+
+function comboMult(combo) { return Math.min(5, 1 + Math.floor(combo / 5)); }
+// self-check: combo multiplier ramp
+console.assert(comboMult(0) === 1 && comboMult(5) === 2 && comboMult(9) === 2 && comboMult(10) === 3 && comboMult(20) === 5, "unlimited combo multiplier");
 
 function computeGrade() {
   if (endKind !== "win") {
@@ -447,7 +481,7 @@ function finish(kind) {
     markEl.style.display = "block";
     markEl.textContent = grade;
     lineEl.textContent = pair[1];
-    metaEl.textContent = `三十秒 · 打低 ${blitzKills}` + grantPlayReward(kind, modeClicks > 0);
+    metaEl.textContent = `三十秒 · 連擊 ${blitzKills}` + grantPlayReward(kind, modeClicks > 0);
     goBtn.textContent = "關卡";
     goBtn.dataset.action = "shoot";
     chantBtn.textContent = "跟beat打";
@@ -503,6 +537,10 @@ function finish(kind) {
 
 function onClear() {
   if (mode === "shoot" && (levelIndex + 1) % 5 === 0) grantLevelReward(levelIndex + 1);
+  if (mode === "shoot" || mode === "unlimited") {
+    const heal = regenPerClear();
+    if (heal > 0 && hp < PLAYER_MAX) hp = Math.min(PLAYER_MAX, Math.round((hp + heal) * 10) / 10);
+  }
   if (levelIndex >= LEVELS.length - 1) {
     finish("win");
     return;
@@ -535,8 +573,8 @@ function updateHud() {
   const rhythmOn = mode === "rhythm" && state !== "menu";
   const blitzOn = mode === "blitz" && state !== "menu";
   const unlimitedOn = mode === "unlimited" && state !== "menu";
-  document.getElementById("leveltext").textContent = rhythmOn ? "跟beat打" : blitzOn ? "無限打" : unlimitedOn ? "無限制 " + (levelIndex + 1) + "/" + LEVELS.length : (levelIndex + 1) + "/" + LEVELS.length;
-  document.getElementById("leftlabel").textContent = rhythmOn ? "連擊" : blitzOn ? "打低" : "剩餘小人";
+  document.getElementById("leveltext").textContent = rhythmOn ? "跟beat打" : blitzOn ? "無限打" : unlimitedOn ? "無CD " + (levelIndex + 1) + "/" + LEVELS.length : (levelIndex + 1) + "/" + LEVELS.length;
+  document.getElementById("leftlabel").textContent = rhythmOn || blitzOn ? "連擊" : "剩餘小人";
   document.getElementById("lefttext").textContent = rhythmOn ? String(chantCombo) : blitzOn ? String(blitzKills) : String(enemies.length);
   const hint = document.querySelector(".hint");
   if (hint) {
@@ -604,27 +642,37 @@ function update(dt) {
   } else if (state === "play") {
     levelTimer -= dt;
     elapsed += dt;
-    const dmg = updateEnemies(sim);
-    if (dmg > 0) {
-      const lost = Math.min(dmg, hp);
-      hp = Math.max(0, hp - dmg);
+    const hits = updateEnemies(sim);
+    let taken = 0;
+    for (const d of hits) {
+      if ((mode === "shoot" || mode === "unlimited") && shieldHits > 0) { shieldHits--; continue; } // shield blocks whole attacks, any strength
+      taken += d;
+    }
+    if (taken > 0) {
+      const lost = Math.min(taken, hp);
+      hp = Math.max(0, hp - taken);
       if (lost > 0) hpPop(lost);
       hurtFlash = 0.45;
-      shake = 8;
       sfxHurt();
     }
     for (let i = 0; i < enemies.length; i++) {
       const enemy = enemies[i];
       if (enemy.flash > 0) enemy.flash -= dt;
-      if ((enemy.type === "office" || enemy.type === "rotten" || enemy.type === "tongue" || enemy.type === "luck") && enemy.y < stopCenter(enemy)) {
-        const rate = enemy.type === "rotten" ? 10 : enemy.type === "luck" ? 16 : 12;
+      if ((enemy.type === "office" || enemy.type === "rotten" || enemy.type === "tongue" || enemy.type === "luck" || enemy.type === "badluck") && enemy.y < stopCenter(enemy)) {
+        const rate = enemy.type === "rotten" ? 10 : enemy.type === "luck" ? 16 : enemy.type === "badluck" ? 16 : 12;
         enemy.walk = (enemy.walk || 0) + dt * rate;
+      }
+      if (ENEMY_TYPES[enemy.type].boss && !enemy.dead) {
+        enemy.walked = (enemy.walked || 0) + Math.abs(enemy.y - (enemy.lastY === undefined ? enemy.y : enemy.lastY));
+        if (enemy.walked >= 18) { enemy.walked = 0; shake = Math.max(shake, 6); } // one quake per ~18px walked
+        enemy.lastY = enemy.y;
       }
       if (!enemy.seen && enemy.y >= FIELD.y) {
         enemy.seen = true;
         if (ENEMY_TYPES[enemy.type].boss && !bossGong) {
           bossGong = true;
           sfxBoss();
+          shake = Math.max(shake, 10); // one screen shake per boss entrance
           floater(enemy.x, 80, "大豬公", "#ffcc66", true);
         }
       }
@@ -780,6 +828,11 @@ function drawLuckSprite(e, b) {
   return drawSheetSprite(e, luckSheet, LUCK_COLS, LUCK_FRAMES, b);
 }
 
+function drawBadluckSprite(e, b) {
+  if (e.type !== "badluck") return false;
+  return drawSheetSprite(e, badluckSheet, BADLUCK_COLS, BADLUCK_FRAMES, b);
+}
+
 function drawEnemy(e) {
   const b = enemyBox(e);
   const head = headBox(e);
@@ -795,7 +848,7 @@ function drawEnemy(e) {
   ctx.ellipse(b.x + b.w / 2, b.y + b.h - 2, b.w * 0.34, Math.max(3, b.h * 0.07), 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (!drawOfficeSprite(e, b) && !drawRottenSprite(e, b) && !drawTongueSprite(e, b) && !drawLuckSprite(e, b)) {
+  if (!drawOfficeSprite(e, b) && !drawRottenSprite(e, b) && !drawTongueSprite(e, b) && !drawLuckSprite(e, b) && !drawBadluckSprite(e, b)) {
   ctx.fillStyle = e.flash > 0 ? "#fff3c4" : t.body;
   ctx.strokeStyle = "#151019";
   ctx.lineWidth = Math.max(2, b.w * 0.035);
@@ -1174,12 +1227,6 @@ document.getElementById("unbtn").addEventListener("pointerdown", (ev) => {
   ev.stopPropagation();
   ac();
   beginUnlimited();
-});
-document.getElementById("blitzbtn").addEventListener("pointerdown", (ev) => {
-  ev.preventDefault();
-  ev.stopPropagation();
-  ac();
-  beginBlitz();
 });
 document.getElementById("chantbtn").addEventListener("pointerdown", (ev) => {
   ev.preventDefault();

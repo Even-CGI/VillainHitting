@@ -1,7 +1,7 @@
 // Shoot-mode weapons. Blank cells in the sheet keep the previous level's value.
 // Durability drops by 1 each time any mode starts. Attack is body damage; a head hit is double.
 
-const WEAPON_ORDER = ["slipper", "heel", "spike", "ballet"];
+const WEAPON_ORDER = ["slipper", "heel", "spike", "ballet", "shield", "regen"];
 
 const WEAPONS = {
   slipper: {
@@ -23,7 +23,7 @@ const WEAPONS = {
       {atk: 1.5, cd: 1, dur: 2, cost: {coins: 65}},
       {atk: 2, cd: 1, dur: 3, cost: {coins: 80}},
       {atk: 2.5, cd: 1, dur: 3, cost: {coins: 95}},
-      {atk: 3, cd: 0.75, dur: 3, cost: {tickets: 8}},
+      {atk: 3, cd: 0.75, dur: 3, cost: {tickets: 6}},
     ],
   },
   spike: {
@@ -34,7 +34,7 @@ const WEAPONS = {
       {atk: 2.5, cd: 1.5, dur: 2, cost: {coins: 110}},
       {atk: 3, cd: 1, dur: 2, cost: {coins: 125}},
       {atk: 3.5, cd: 1, dur: 3, cost: {tickets: 5}},
-      {atk: 4, cd: 0.5, dur: 3, cost: {tickets: 7}},
+      {atk: 4, cd: 0.5, dur: 3, cost: {tickets: 8}},
     ],
   },
   ballet: {
@@ -48,7 +48,36 @@ const WEAPONS = {
       {atk: 2, cd: 0.5, dur: 5, cost: {coins: 105}},
     ],
   },
+  shield: {
+    name: "防護盾",
+    passive: true, // shoot & unlimited only: blocks N damage per enemy hit, 1 durability per run
+    fix: [50, 50, 50, 70, 150],
+    levels: [
+      {atk: 0, cd: 0, dur: 2, blk: 1, cost: {free: true}},
+      {atk: 0, cd: 0, dur: 2, blk: 2, cost: {coins: 100}},
+      {atk: 0, cd: 0, dur: 2, blk: 3, cost: {coins: 200}},
+      {atk: 0, cd: 0, dur: 3, blk: 4, cost: {tickets: 4}},
+      {atk: 0, cd: 0, dur: 4, blk: 5, cost: {tickets: 6}},
+    ],
+  },
+  regen: {
+    name: "回血",
+    passive: true, // heal per level clear in shoot & unlimited; no durability
+    fix: null,
+    levels: [
+      {atk: 0, cd: 0, dur: null, heal: 0.5, cost: {coins: 100}},
+      {atk: 0, cd: 0, dur: null, heal: 1, cost: {coins: 160}},
+      {atk: 0, cd: 0, dur: null, heal: 1.5, cost: {coins: 220}},
+      {atk: 0, cd: 0, dur: null, heal: 2, cost: {tickets: 5}},
+      {atk: 0, cd: 0, dur: null, heal: 2.5, cost: {tickets: 7}},
+    ],
+  },
 };
+
+{ // self-check: shield & regen ladders match the sheet
+  console.assert(WEAPONS.shield.levels[0].blk === 1 && WEAPONS.shield.levels[3].cost.tickets === 4 && WEAPONS.shield.fix[4] === 150, "shield ladder");
+  console.assert(WEAPONS.regen.levels[0].cost.coins === 100 && WEAPONS.regen.levels[4].heal === 2.5 && WEAPONS.regen.levels[4].cost.tickets === 7, "regen ladder");
+}
 
 (function fillWeaponLevels() {
   for (const id in WEAPONS) {
@@ -163,6 +192,23 @@ function spendDurability() {
   return true;
 }
 
+// Shield & regen apply to shoot & unlimited modes only.
+function shieldGuard() {
+  const o = weaponState.owned.shield;
+  if (!o || (o.dur || 0) <= 0) return 0;
+  return WEAPONS.shield.levels[o.level - 1].blk;
+}
+function regenPerClear() {
+  const o = weaponState.owned.regen;
+  return o ? WEAPONS.regen.levels[o.level - 1].heal : 0;
+}
+function useGearOnRunStart() {
+  const o = weaponState.owned.shield;
+  if (o && (o.dur || 0) > 0) o.dur = Math.round((o.dur - 1) * 10) / 10;
+  saveWeapons();
+  renderArmory();
+}
+
 // Rhythm and blitz pay 20 only when the round runs to the end and the player clicked at least once.
 // The very first clean clear of each of those modes also pays one breakthrough ticket, once per save.
 function grantPlayReward(kind, clicked) {
@@ -211,7 +257,7 @@ function grantUnlimitedFirst(kind) {
   weaponState.tickets += 1;
   saveWeapons();
   renderArmory();
-  return " · +1 突破券（無限制首次通場）";
+  return " · +1 突破券（無CD首次通場）";
 }
 
 const AD_COINS = 10;
@@ -267,6 +313,11 @@ function renderArmory() {
     line.className = "statline";
     const durText = owned ? fmtNum(owned.dur) + "/" + fmtNum(shown.dur) : "0/" + fmtNum(shown.dur);
     line.textContent = "攻擊 " + fmtNum(shown.atk) + " · 冷卻 " + fmtNum(shown.cd) + "秒 · 耐用 " + durText;
+    if (spec.passive) { // overwrite the weapon statline for passive gear
+      line.textContent = shown.blk !== undefined
+        ? "可擋 " + shown.blk + " 次攻擊 · 耐用 " + (owned ? fmtNum(owned.dur) : "0") + "/" + fmtNum(shown.dur)
+        : "每次過關自動回 +" + fmtNum(shown.heal) + " 生命";
+    }
     if (flash && flash.id === id && !flash.fix) line.classList.add("wep-jump");
     info.appendChild(title);
     info.appendChild(line);
@@ -286,15 +337,16 @@ function renderArmory() {
     shop.dataset.id = id;
     shop.textContent = !owned ? "買入 " + costLabel(buyCost) : next ? "升級 " + costLabel(next.cost) : "滿級";
     shop.disabled = owned ? !next || !canPay(next.cost) : !canPay(buyCost);
+    const fixCost = spec.fix ? (Array.isArray(spec.fix) ? spec.fix[(owned ? owned.level : 1) - 1] : spec.fix) : 0;
     const fix = document.createElement("button");
     fix.type = "button";
     fix.dataset.act = "fix";
     fix.dataset.id = id;
-    fix.textContent = "修復 " + spec.fix;
-    fix.disabled = !owned || owned.dur >= shown.dur - 0.001 || weaponState.coins < spec.fix;
-    acts.appendChild(equip);
+    fix.textContent = "修復 " + fixCost;
+    fix.disabled = !owned || shown.dur == null || owned.dur >= shown.dur - 0.001 || weaponState.coins < fixCost;
+    if (!spec.passive) acts.appendChild(equip);
     acts.appendChild(shop);
-    acts.appendChild(fix);
+    if (shown.dur != null) acts.appendChild(fix);
     row.appendChild(info);
     row.appendChild(acts);
     list.appendChild(row);
@@ -312,7 +364,7 @@ function armoryAction(act, id) {
     if (owned) return;
     if (!pay(spec.levels[0].cost)) { armoryNote("小人幣或者突破券唔夠。"); return; }
     weaponState.owned[id] = {level: 1, dur: spec.levels[0].dur};
-    weaponState.equipped = id;
+    if (!spec.passive) weaponState.equipped = id;
     armoryNote("買咗" + spec.name + "。");
   } else if (act === "upgrade") {
     if (!owned || owned.level >= spec.levels.length) return;
@@ -328,9 +380,10 @@ function armoryAction(act, id) {
   } else if (act === "fix") {
     if (!owned) return;
     const cap = spec.levels[owned.level - 1].dur;
-    if (owned.dur >= cap - 0.001) return;
-    if (weaponState.coins < spec.fix) { armoryNote("小人幣唔夠修復。"); return; }
-    weaponState.coins -= spec.fix;
+    if (cap == null || owned.dur >= cap - 0.001) return;
+    const fixCost = spec.fix ? (Array.isArray(spec.fix) ? spec.fix[owned.level - 1] : spec.fix) : 0;
+    if (!fixCost || weaponState.coins < fixCost) { armoryNote("小人幣唔夠修復。"); return; }
+    weaponState.coins -= fixCost;
     owned.dur = cap;
     armoryFx = {id: id, fix: true};
     sfxStitch();

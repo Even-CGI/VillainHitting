@@ -154,9 +154,9 @@ function spawnWave(levelIdx) {
   }
 }
 
-// dt in seconds; returns the total damage dealt to the player this frame (caller owns player HP)
+// dt in seconds; returns one entry per enemy attack that landed (caller owns player HP)
 function updateEnemies(dt) {
-  let damage = 0;
+  const hits = [];
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
     if (enemy.stun > 0) {
@@ -177,26 +177,57 @@ function updateEnemies(dt) {
     }
     const prevY = enemy.y;
     const stop = stopCenter(enemy);
-    enemy.y = Math.min(enemy.y + enemy.speed * dt, stop);
+    // each trait owns one gait: drift=wide sine, duck=zigzag step, bitter=one sidestep taunt,
+    // illness=stutter (pause 1s of each 3s), badluck=lane jitter, betrayal=feint step back,
+    // mistress=sine that grows closer. roadX/clampToStreet keep every gait on the stones.
+    let walk = 1;
+    if (trait === "illness") {
+      enemy.phase += dt;
+      if (enemy.phase % 3 < 1) walk = 0;
+    }
+    enemy.y = Math.min(enemy.y + enemy.speed * walk * dt, stop);
+    if (trait === "betrayal") {
+      const midway = (SPAWN_GATES[1].y + stop) / 2;
+      if (enemy.back == null && enemy.y >= midway) enemy.back = 1;
+      if (enemy.back > 0) {
+        enemy.back -= dt;
+        enemy.y = Math.max(enemy.y - enemy.speed * 2 * dt, midway);
+      }
+    }
     if (enemy.lane == null) {
       enemy.lane = Math.max(-1, Math.min(1, (enemy.homeX - PLAYER_X) / roadHalf(enemy.y)));
     }
+    if (trait === "badluck") enemy.lane += (Math.random() - 0.5) * 0.02;
     let x = roadX(enemy.lane, enemy.y);
     if (trait === "drift") {
       enemy.phase += dt * 2.4;
-      x += Math.sin(enemy.phase) * roadHalf(enemy.y) * 0.16;
+      x += Math.sin(enemy.phase) * roadHalf(enemy.y) * 0.25;
+    }
+    if (trait === "duck") {
+      x += (Math.floor(enemy.phase / 1.76) % 2 ? 1 : -1) * 0.22 * roadHalf(enemy.y);
+    }
+    if (trait === "bitter") {
+      if (enemy.step == null && enemy.y >= (SPAWN_GATES[1].y + stop) / 2) {
+        enemy.step = (Math.random() < 0.5 ? -1 : 1) * 0.3;
+      }
+      if (enemy.step) x += enemy.step * roadHalf(enemy.y);
+    }
+    if (trait === "mistress") {
+      enemy.phase += dt * 2;
+      const nearT = Math.max(0, Math.min(1, (enemy.y - ROAD_FAR_Y) / (stop - ROAD_FAR_Y)));
+      x += Math.sin(enemy.phase) * roadHalf(enemy.y) * (0.08 + 0.15 * nearT);
     }
     enemy.x = clampToStreet(enemy, x);
     const t = ENEMY_TYPES[enemy.type];
     // Condition 2: the frame an enemy first reaches the player, it hits immediately.
-    if (prevY < stop && enemy.y >= stop) damage += randInt(t.dmg[0], t.dmg[1]);
+    if (prevY < stop && enemy.y >= stop) hits.push(randInt(t.dmg[0], t.dmg[1]));
     // Condition 1: the 5–10s swing timer starts at spawn and keeps running while walking.
     enemy.nextAttack -= dt;
     if (enemy.nextAttack > 0) continue;
     enemy.nextAttack = randInt(5, 10);
-    damage += randInt(t.dmg[0], t.dmg[1]);
+    hits.push(randInt(t.dmg[0], t.dmg[1]));
   }
-  return damage;
+  return hits;
 }
 
 
@@ -352,14 +383,14 @@ function smackEnemy(enemy) {
   const walker = spawnEnemy("office", FIELD.x + 10, FIELD.y - SPRITE);
   const walked = updateEnemies(1);
   console.assert(walker.y === FIELD.y - SPRITE + ENEMY_TYPES.office.speed, "1s of walking = speed px");
-  console.assert(walked === 0, "1s is still inside the opening 5–10s swing window");
+  console.assert(walked.length === 0, "1s is still inside the opening 5–10s swing window");
   walker.nextAttack = 0;
   const whileWalking = updateEnemies(0);
-  console.assert(whileWalking >= ENEMY_TYPES.office.dmg[0] && whileWalking <= ENEMY_TYPES.office.dmg[1], "a walking enemy swings once its timer elapses");
+  console.assert(whileWalking.length === 1 && whileWalking[0] >= ENEMY_TYPES.office.dmg[0] && whileWalking[0] <= ENEMY_TYPES.office.dmg[1], "a walking enemy swings once its timer elapses");
   walker.y = stopCenter(walker);
   walker.nextAttack = 0;
   const dealt = updateEnemies(0);
-  console.assert(dealt >= ENEMY_TYPES.office.dmg[0] && dealt <= ENEMY_TYPES.office.dmg[1], "a stopped enemy swings its own dmg band");
+  console.assert(dealt.length === 1 && dealt[0] >= ENEMY_TYPES.office.dmg[0] && dealt[0] <= ENEMY_TYPES.office.dmg[1], "a stopped enemy swings its own dmg band");
 
   clearEnemies();
   const line = stopCenter({size: 1});
@@ -369,9 +400,9 @@ function smackEnemy(enemy) {
   console.assert(arriver.y === line, "arrival walks onto the player line");
   console.assert(Math.abs(arriver.x - PLAYER_X) <= roadHalf(arriver.y) + 1, "arrival stays on the near cobblestones");
   console.assert(Math.abs(roadX(-0.8, line) - PLAYER_X) > Math.abs(roadX(-0.8, ROAD_FAR_Y) - PLAYER_X), "the street widens as enemies come closer");
-  console.assert(onArrival === ENEMY_TYPES.tongue.dmg[0], "reaching the player hits immediately");
+  console.assert(onArrival.length === 1 && onArrival[0] === ENEMY_TYPES.tongue.dmg[0], "reaching the player hits immediately");
   const standing = updateEnemies(1);
-  console.assert(standing === 0, "standing in front does not hit again until the timer");
+  console.assert(standing.length === 0, "standing in front does not hit again until the timer");
 
   clearEnemies();
   const target = spawnEnemy("tongue", FIELD.x + 100, stopCenter({size: 1}));
@@ -395,6 +426,26 @@ function smackEnemy(enemy) {
   console.assert(smackEnemy(front) === true, "a smack launches the doll");
   console.assert(enemies.length === 0 && flying.length === 1, "smack leaves the live list");
   console.assert(inBox(frontBox, frontBox.x + frontBox.w / 2, frontBox.y + frontBox.h - 2), "the whole sprite is the hit");
+  // gaits: the stateful ones only (sine/jitter math stays visual, no assertion).
+  clearEnemies();
+  const stum = spawnEnemy("illness", PLAYER_X, ROAD_FAR_Y + 10);
+  stum.phase = 0;
+  const yBefore = stum.y;
+  updateEnemies(0.5);
+  console.assert(stum.y === yBefore, "illness stands still inside its pause");
+  for (let s = 0; s < 5; s++) updateEnemies(0.5); // real dt steps, so the pause window can end
+  console.assert(stum.y > yBefore, "illness walks once the pause ends");
+  const neight = spawnEnemy("bitter", PLAYER_X, (SPAWN_GATES[1].y + stopCenter({ size: 1 })) / 2 + 1);
+  updateEnemies(0.1);
+  console.assert(neight.step != null, "bitter taunts a sidestep past halfway");
+  console.assert(Math.abs(neight.x - clampToStreet(neight, PLAYER_X + neight.step * roadHalf(neight.y))) < 1, "the sidestep lands on the stones");
+  const snake = spawnEnemy("betrayal", PLAYER_X, 300);
+  const bStop = stopCenter(snake);
+  snake.y = (SPAWN_GATES[1].y + bStop) / 2 + 1;
+  const beforeBack = snake.y;
+  updateEnemies(0.2);
+  console.assert(snake.back != null && snake.y < beforeBack, "betrayal winds up, then steps back");
+
   clearEnemies();
   console.assert(enemies.length === 0, "self-check leaves a clean start state");
 }
