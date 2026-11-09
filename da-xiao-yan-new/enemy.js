@@ -61,12 +61,17 @@ let flying = [];
 function spawnEnemy(type, x, y) {
   const t = ENEMY_TYPES[type];
   const hp = randInt(t.hp[0], t.hp[1]);
+  const spMul = LEVELS[levelIndex].speedMul || 1;
   const enemy = {
-    type: type, x: x, y: y, homeX: x, hp: hp, maxHp: hp, size: t.size, speed: t.speed,
+    type: type, x: x, y: y, homeX: x, hp: hp, maxHp: hp, size: t.size, speed: t.speed * spMul,
     nextAttack: randInt(5, 10), phase: Math.random() * Math.PI * 2,
     hide: 1, stun: 0, flash: 0, seen: false,
   };
   enemies.push(enemy);
+  // fox queues a biter on the very first frame of the fight; the update loop does the rest.
+  if (t.trait === "mistress") {
+    enemy.summonTimer = 0;
+  }
   return enemy;
 }
 
@@ -163,6 +168,13 @@ function updateEnemies(dt) {
       enemy.phase += dt * 2.2;
       enemy.hide = (enemy.phase % 1.5) < 0.42 ? 0.62 : 1;
     }
+    if (trait === "mistress" && enemy.summonTimer != null) {
+      enemy.summonTimer -= dt;
+      if (enemy.summonTimer <= 0 && enemies.length < 20) {
+        enemy.summonTimer = 8;
+        spawnEnemy("bitter", enemy.x, enemy.y);
+      }
+    }
     const prevY = enemy.y;
     const stop = stopCenter(enemy);
     enemy.y = Math.min(enemy.y + enemy.speed * dt, stop);
@@ -203,19 +215,38 @@ function inBox(box, x, y) {
 }
 
 // Head is double the body hit. Omit attack and the body hit stays 1, so the self-check still sees 2 and 1.
+// Returns {dmg, used, reason}: used=false means out-of-box (caller tries next enemy). used=true means
+// the swing landed on this enemy; dmg is what actually hit HP. reason labels a blocked/dodged swing.
 function hitEnemy(enemy, x, y, attack) {
-  if (enemy.dead) return 0;
+  if (enemy.dead) return {dmg: 0, used: false};
+  const t = ENEMY_TYPES[enemy.type];
+  // badluck: 30% jinx on the player — swing consumed, no shot, no hit.
+  if (t.trait === "badluck" && Math.random() < 0.3) return {dmg: 0, used: true, reason: "dodge"};
+  // fox shield: cannot take HP while any of her summoned biters still stand.
+  if (t.trait === "mistress" && enemies.some((o) => ENEMY_TYPES[o.type].trait === "bitter" && !o.dead)) return {dmg: 0, used: true, reason: "shield"};
   const atk = attack == null ? 1 : attack;
   const dmg = inBox(headBox(enemy), x, y) ? atk * 2 : inBox(enemyBox(enemy), x, y) ? atk : 0;
-  if (dmg === 0) return 0;
+  if (dmg === 0) return {dmg: 0, used: false};
   enemy.hp -= dmg;
   enemy.stun = 0.12;
   enemy.flash = 0.1;
   if (enemy.hp <= 0) {
+    // bitter chain-taunt: on death, one nearby normal enemy takes dmg[0]. direct hp apply, no recursion.
+    if (t.trait === "bitter") {
+      const half = spriteHalf(enemy) * 2;
+      for (const other of enemies) {
+        if (other === enemy || other.dead) continue;
+        if (ENEMY_TYPES[other.type].size === 3) continue;
+        if (Math.abs(other.x - enemy.x) > half || Math.abs(other.y - enemy.y) > half) continue;
+        other.hp -= t.dmg[0];
+        if (other.hp <= 0) { launchEnemy(other); removeEnemy(other); }
+        break;
+      }
+    }
     launchEnemy(enemy);
     removeEnemy(enemy);
   }
-  return dmg;
+  return {dmg, used: true};
 }
 
 // Knock the doll up and away from the player until it leaves the screen.
@@ -298,7 +329,12 @@ function smackEnemy(enemy) {
     const count = LEVELS[lv].count;
     const extra = LEVELS[lv].boss ? 1 : 0;
     console.assert(enemies.length >= count[0] + extra && enemies.length <= count[1] + extra, `level ${lv} spawned the wrong count`);
-    if (LEVELS[lv].boss) console.assert(enemies[enemies.length - 1].type === LEVELS[lv].boss, "boss must spawn last");
+    if (LEVELS[lv].boss) {
+      const last = enemies[enemies.length - 1];
+      const expected = LEVELS[lv].boss;
+      const ok = Array.isArray(expected) ? expected.indexOf(last.type) !== -1 : last.type === expected;
+      console.assert(ok, "boss must spawn last");
+    }
     for (const enemy of enemies) {
       console.assert(enemy.x > FIELD.x && enemy.x < FIELD.x + FIELD.w, "spawn x inside the play area");
       const top = enemy.y - (SPRITE * enemy.size * depthScale(enemy)) / 2;
@@ -342,9 +378,9 @@ function smackEnemy(enemy) {
   target.hp = 3; // pin hp so the 2+1 kill below is deterministic
   const box = enemyBox(target);
   const head = headBox(target);
-  console.assert(hitEnemy(target, head.x + 1, head.y + 1) === 2, "head band = -2");
-  console.assert(hitEnemy(target, box.x + 1, box.y + box.h - 1) === 1, "body band = -1");
-  console.assert(hitEnemy(target, box.x - 1, box.y - 1) === 0, "outside the sprite = no damage");
+  console.assert(hitEnemy(target, head.x + 1, head.y + 1).dmg === 2, "head band = -2");
+  console.assert(hitEnemy(target, box.x + 1, box.y + box.h - 1).dmg === 1, "body band = -1");
+  console.assert(hitEnemy(target, box.x - 1, box.y - 1).used === false, "outside the sprite = no damage");
   console.assert(enemies.length === 0, "kills splice the live list, so levelCleared() can see it");
   console.assert(flying.length === 1 && flying[0].dead, "a kill launches the doll off the live list");
   updateFlying(1.2);

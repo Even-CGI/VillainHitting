@@ -467,7 +467,7 @@
     100% { transform: translate(-6px, -48px) scale(1.2); opacity: 0; }
   }
 #toast{position:absolute;z-index:999;top:88px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100% - 32px));pointer-events:none}
-.toast-item{padding:10px 14px;background:rgba(21,16,25,.92);border:1px solid rgba(255,209,102,.35);border-radius:10px;color:red;font-size:13px;opacity:1;transition:opacity .15s}
+.toast-item{padding:10px 14px;background:rgba(21,16,25,.92);border:1px solid rgba(255,209,102,.35);border-radius:10px;color:#ff8080;font-size:13px;opacity:1;transition:opacity .15s}
 .toast-item.toast-hide{opacity:0}
 body.portrait #toast{top:116px}
 </style>
@@ -480,14 +480,14 @@ body.portrait #toast{top:116px}
 		<div id="toast" aria-live="polite" aria-relevant="additions"></div>
       <div class="statrow">
         <div class="stat" id="hpstat"><span>師傅血</span><b id="hptext">10</b><div class="hpbar" id="pips"></div></div>
-        <div class="stat"><span>關卡</span><b id="leveltext">1/5</b></div>
+        <div class="stat"><span>關卡</span><b id="leveltext">1/20</b></div>
         <div class="stat"><span id="leftlabel">剩餘小人</span><b id="lefttext">0</b></div>
         <div class="stat"><span>命中</span><b id="acctext">—</b></div>
         <div class="stat"><span>出手</span><b id="shottext">0</b></div>
         <div class="stat" id="mutestat"><span>聲</span><b id="mutetext">開</b></div>
       </div>
       <div class="touchbar">
-        <div class="hint">點擊射擊 · 打頭 −2 · 打身 −1</div>
+        <div class="hint">點擊關卡 · 打頭 −2 · 打身 −1</div>
         <div class="touch-actions">
           <button id="pausebtn" class="mini" type="button">暫停</button>
           <button id="endbtn" class="mini" type="button">結束</button>
@@ -508,11 +508,12 @@ body.portrait #toast{top:116px}
       <div class="mark" id="mark" style="display:none"></div>
       <p id="line"></p>
       <p class="meta" id="meta"></p>
-      <button id="go" type="button">射擊</button>
+      <button id="go" type="button">關卡</button>
       <button id="chantbtn" type="button">跟beat打</button>
       <button id="blitzbtn" type="button">無限打</button>
-      <div class="keys">射擊撳畫面就打。跟beat打隨機英文或者廣東話，等反應圈縮到個圈先撳。無限打三十秒，正前方一隻，點中就打飛。</div>
-      <div class="keys">射擊用裝備緊嘅鞋。打頭係攻擊兩倍。任何模式開一場扣 1 耐用度。打完射擊：C +8、B +12、A +18、S +26 小人幣，過晒五關再 +1 突破券。跟beat打同無限打打完一場，有撳過就 +20 小人幣，成場冇撳就 +0。</div>
+      <button id="unbtn" type="button">無限制</button>
+      <div class="keys">關卡撳畫面就打。跟beat打隨機英文或者廣東話，等反應圈縮到個圈先撳。無限打三十秒，正前方一隻，點中就打飛。</div>
+      <div class="keys">關卡用裝備緊嘅鞋。打頭係攻擊兩倍。任何模式開一場扣 1 耐用度。打完關卡：C +8、B +12、A +18、S +26 小人幣。每5關完成 +1 突破券。跟beat打同無限打第一次完成 +1 突破券（每屬開場一次）；有撳過就 +20 小人幣，成場冇撳就 +0。無限制同關卡但無武器無冷降，固定打身−1／打頭−2；有撳過就 +20 小人幣，第一次廿關通場 +1 突破券。</div>
       <div id="armory">
         <div id="wallet"></div>
         <div id="weaponlist"></div>

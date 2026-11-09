@@ -13,6 +13,7 @@ const metaEl = document.getElementById("meta");
 const goBtn = document.getElementById("go");
 const chantBtn = document.getElementById("chantbtn");
 const blitzBtn = document.getElementById("blitzbtn");
+const unBtn = document.getElementById("unbtn");
 const vignette = document.getElementById("vignette");
 const stick = document.getElementById("stick");
 const officeSheet = new Image();
@@ -262,6 +263,17 @@ function beginBlitz() {
   showOverlay(false);
 }
 
+// practice ladder: same 20 levels, fixed −1/−2 damage, no cooldown, no weapon, no rewards, no tickets
+function beginUnlimited() {
+  stopRhythm();
+  resetRun();
+  mode = "unlimited";
+  goBtn.dataset.action = "shoot";
+  state = "cutscene";
+  cutT = 2.2;
+  showOverlay(false);
+}
+
 function blitzGrade() {
   if (blitzKills >= 40) return "S";
   if (blitzKills >= 25) return "A";
@@ -350,12 +362,12 @@ function floater(x, y, text, color, big) {
 
 function shoot(x, y) {
   if (state !== "play" || paused) return;
-  if (mode !== "blitz" && weaponCd > 0) return;
-  shots++;
+  if (mode !== "blitz" && mode !== "unlimited" && weaponCd > 0) return;
+  if (mode === "unlimited") modeClicks++;
   swing = 1;
   hitStop = 0.035;
   sfxSwing();
-  if (mode !== "blitz") {
+  if (mode !== "blitz" && mode !== "unlimited") {
     weaponCdMax = weaponCooldown();
     weaponCd = weaponCdMax;
   }
@@ -368,6 +380,7 @@ function shoot(x, y) {
       const burstY = enemy.y;
       smackEnemy(enemy);
       hits++;
+      shots++;
       blitzKills++;
       weaponImpact(burstX, burstY);
       floater(burstX, burstY - 36, "打", "#ffd166", true);
@@ -379,9 +392,17 @@ function shoot(x, y) {
   for (let i = 0; i < order.length; i++) {
     const enemy = order[i];
     const before = enemy.hp;
-    const attack = weaponAttack();
-    const dmg = hitEnemy(enemy, x, y, attack);
-    if (!dmg) continue;
+    const attack = mode === "unlimited" ? 1 : weaponAttack();
+    const res = hitEnemy(enemy, x, y, attack);
+    if (!res.used) continue;
+    if (res.dmg === 0) {
+      if (res.reason === "shield") shots++;
+      weaponImpact(enemy.x, enemy.y);
+      floater(enemy.x, enemy.y - 36, res.reason === "shield" ? "擋" : "霉", res.reason === "shield" ? "#c0c4cc" : "#c77fb3", false);
+      return;
+    }
+    const dmg = res.dmg;
+    shots++;
     hits++;
     const gold = Math.abs(dmg - attack * 2) < 0.001;
     if (gold) crits++;
@@ -397,7 +418,17 @@ function shoot(x, y) {
 }
 
 function computeGrade() {
-  if (endKind !== "win") return "C";
+  if (endKind !== "win") {
+    const n = LEVELS.length;
+    const sAt = Math.ceil(n * 0.75);
+    const aAt = Math.ceil(n * 0.5);
+    const bAt = Math.ceil(n * 0.25);
+    if (levelIndex >= sAt) return "S";
+    if (levelIndex >= aAt) return "A";
+    if (levelIndex >= bAt) return "B";
+    if (levelIndex >= 1) return "C";
+    return "C";
+  }
   const acc = shots ? hits / shots : 0;
   if (acc >= 0.7 && hp >= 6) return "S";
   if (acc >= 0.5 || hp >= 4) return "A";
@@ -417,7 +448,7 @@ function finish(kind) {
     markEl.textContent = grade;
     lineEl.textContent = pair[1];
     metaEl.textContent = `三十秒 · 打低 ${blitzKills}` + grantPlayReward(kind, modeClicks > 0);
-    goBtn.textContent = "射擊";
+    goBtn.textContent = "關卡";
     goBtn.dataset.action = "shoot";
     chantBtn.textContent = "跟beat打";
     blitzBtn.textContent = "再打一次";
@@ -440,7 +471,7 @@ function finish(kind) {
     lineEl.textContent = pair[1];
     const pct = stats.shots ? Math.round(acc * 100) : 0;
     metaEl.textContent = `命中 ${pct}% · 最高連擊 ${stats.best} · 正中 ${stats.perfects}` + grantPlayReward(kind, modeClicks > 0);
-    goBtn.textContent = "射擊";
+    goBtn.textContent = "關卡";
     goBtn.dataset.action = "shoot";
     chantBtn.textContent = "再跟一次";
     showOverlay(true);
@@ -459,7 +490,7 @@ function finish(kind) {
   markEl.textContent = grade;
   lineEl.textContent = pair[1];
   const acc = shots ? Math.round((hits / shots) * 100) : 0;
-  metaEl.textContent = `用時 ${elapsed.toFixed(1)} 秒 · 命中 ${acc}% · 爆頭 ${crits} · 餘血 ${hp}` + grantShootReward(kind, grade);
+  metaEl.textContent = `用時 ${elapsed.toFixed(1)} 秒 · 命中 ${acc}% · 爆頭 ${crits} · 餘血 ${hp}` + (mode === "unlimited" ? grantPlayReward(kind, modeClicks > 0) + grantUnlimitedFirst(kind) : grantShootReward(kind, grade));
   goBtn.textContent = "再打一場";
   goBtn.dataset.action = "shoot";
   chantBtn.textContent = "跟beat打";
@@ -471,6 +502,7 @@ function finish(kind) {
 }
 
 function onClear() {
+  if (mode === "shoot" && (levelIndex + 1) % 5 === 0) grantLevelReward(levelIndex + 1);
   if (levelIndex >= LEVELS.length - 1) {
     finish("win");
     return;
@@ -502,13 +534,15 @@ function updateHud() {
   for (let i = 0; i < PLAYER_MAX; i++) pips.children[i].classList.toggle("on", i < hp);
   const rhythmOn = mode === "rhythm" && state !== "menu";
   const blitzOn = mode === "blitz" && state !== "menu";
-  document.getElementById("leveltext").textContent = rhythmOn ? "跟beat打" : blitzOn ? "無限打" : (levelIndex + 1) + "/5";
+  const unlimitedOn = mode === "unlimited" && state !== "menu";
+  document.getElementById("leveltext").textContent = rhythmOn ? "跟beat打" : blitzOn ? "無限打" : unlimitedOn ? "無限制 " + (levelIndex + 1) + "/" + LEVELS.length : (levelIndex + 1) + "/" + LEVELS.length;
   document.getElementById("leftlabel").textContent = rhythmOn ? "連擊" : blitzOn ? "打低" : "剩餘小人";
   document.getElementById("lefttext").textContent = rhythmOn ? String(chantCombo) : blitzOn ? String(blitzKills) : String(enemies.length);
   const hint = document.querySelector(".hint");
   if (hint) {
     if (rhythmOn) hint.textContent = "反應圈縮到先撳";
     else if (blitzOn) hint.textContent = "點擊小人就打";
+    else if (unlimitedOn) hint.textContent = "無武器 · 打頭 −2 · 打身 −1 · 無冷降";
     else {
       const gear = equippedWeapon();
       const wait = weaponCd > 0 ? " · 冷卻 " + weaponCd.toFixed(1) + "秒" : "";
@@ -846,6 +880,54 @@ function drawEnemy(e) {
     ctx.beginPath();
     ctx.arc(b.x + b.w / 2, b.y + b.h * 0.62, b.w * 0.28, 0.2, Math.PI - 0.2);
     ctx.stroke();
+  } else if (t.trait === "bitter") {
+    ctx.fillStyle = t.accent;
+    ctx.beginPath();
+    ctx.moveTo(head.x + head.w * 0.28, head.y + head.h * 0.72);
+    ctx.lineTo(head.x + head.w * 0.72, head.y + head.h * 0.78);
+    ctx.lineTo(head.x + head.w * 0.5, head.y + head.h * 0.9);
+    ctx.fill();
+  } else if (t.trait === "illness") {
+    ctx.strokeStyle = t.accent;
+    ctx.lineWidth = Math.max(2, b.w * 0.04);
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(b.x + b.w * (0.3 + i * 0.2), b.y + b.h * (0.3 + (i % 2) * 0.15), Math.max(2, b.w * 0.05), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (t.trait === "badluck") {
+    ctx.fillStyle = t.accent;
+    ctx.beginPath();
+    ctx.moveTo(b.x + b.w * 0.72, b.y + b.h * 0.28);
+    ctx.lineTo(b.x + b.w * 0.86, b.y + b.h * 0.42);
+    ctx.lineTo(b.x + b.w * 0.86, b.y + b.h * 0.28);
+    ctx.closePath();
+    ctx.fill();
+  } else if (t.trait === "betrayal") {
+    ctx.strokeStyle = t.accent;
+    ctx.lineWidth = Math.max(3, b.w * 0.04);
+    ctx.beginPath();
+    ctx.moveTo(b.x - 6, b.y + b.h * 0.5);
+    ctx.lineTo(b.x + b.w * 0.2, b.y + b.h * 0.45);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(b.x + b.w * 0.2 - 4, b.y + b.h * 0.51);
+    ctx.lineTo(b.x + b.w * 0.2, b.y + b.h * 0.45);
+    ctx.lineTo(b.x + b.w * 0.2 + 4, b.y + b.h * 0.51);
+    ctx.stroke();
+  } else if (t.trait === "mistress") {
+    ctx.fillStyle = t.accent;
+    ctx.beginPath();
+    ctx.moveTo(b.x + b.w * 0.5, b.y - 6);
+    ctx.lineTo(b.x + b.w * 0.44, b.y + b.h * 0.16);
+    ctx.lineTo(b.x + b.w * 0.56, b.y + b.h * 0.16);
+    ctx.fill();
+    ctx.strokeStyle = t.accent;
+    ctx.lineWidth = Math.max(2, b.w * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(b.x + b.w * 0.2, b.y + b.h * 0.7);
+    ctx.lineTo(b.x + b.w * 0.8, b.y + b.h * 0.7);
+    ctx.stroke();
   }
   }
 
@@ -1087,6 +1169,12 @@ goBtn.addEventListener("pointerdown", (ev) => {
   else if (goBtn.dataset.action === "blitz") beginBlitz();
   else beginRun();
 });
+document.getElementById("unbtn").addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  ac();
+  beginUnlimited();
+});
 document.getElementById("blitzbtn").addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   ev.stopPropagation();
@@ -1129,9 +1217,9 @@ document.getElementById("endbtn").addEventListener("pointerdown", (ev) => {
 titleEl.textContent = "打小人";
 subtitleEl.textContent = "打飛小人，洩黴氣！";
 lineEl.textContent = "夜黑十字路口。夾竹桃一揮，紙紮小人就散。";
-metaEl.textContent = "五關 · 每關三十秒 · 師傅十血，唔會自動回";
+metaEl.textContent = "二十關 · 每關三十秒 · 師傅十血，唔會自動回";
 goBtn.dataset.action = "shoot";
-goBtn.textContent = "射擊";
+goBtn.textContent = "關卡";
 chantBtn.textContent = "跟beat打";
 blitzBtn.textContent = "無限打";
 requestAnimationFrame(frame);

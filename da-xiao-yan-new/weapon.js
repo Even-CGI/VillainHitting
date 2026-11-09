@@ -80,6 +80,9 @@ function loadWeapons() {
   weaponState = {
     coins: saved && saved.coins > 0 ? saved.coins : 0,
     tickets: saved && saved.tickets > 0 ? saved.tickets : 0,
+    firstBeat: saved && saved.firstBeat ? 1 : 0,
+    firstBlitz: saved && saved.firstBlitz ? 1 : 0,
+    firstUnlimited: saved && saved.firstUnlimited ? 1 : 0,
     equipped: "slipper",
     owned: {},
   };
@@ -161,27 +164,54 @@ function spendDurability() {
 }
 
 // Rhythm and blitz pay 20 only when the round runs to the end and the player clicked at least once.
+// The very first clean clear of each of those modes also pays one breakthrough ticket, once per save.
 function grantPlayReward(kind, clicked) {
   if (kind === "quit") return "";
   const pay = clicked ? 20 : 0;
   if (pay) weaponState.coins += pay;
-  saveWeapons();
-  renderArmory();
-  return " · +" + pay + " 小人幣";
+  let extra = pay ? " · +" + pay + " 小人幣" : "";
+  if (kind === "win" && clicked) {
+    if (mode === "rhythm" && !weaponState.firstBeat) {
+      weaponState.firstBeat = 1;
+      weaponState.tickets += 1;
+      extra += " · +1 突破券（跟beat打首次）";
+    } else if (mode === "blitz" && !weaponState.firstBlitz) {
+      weaponState.firstBlitz = 1;
+      weaponState.tickets += 1;
+      extra += " · +1 突破券（無限打首次）";
+    }
+  }
+  if (extra) { saveWeapons(); renderArmory(); }
+  return extra;
 }
 
 function grantShootReward(kind, grade) {
   if (kind === "quit") return "";
   const pay = SHOOT_PAY[grade] || SHOOT_PAY.C;
   weaponState.coins += pay;
-  let extra = " · +" + pay + " 小人幣";
-  if (kind === "win") {
-    weaponState.tickets += 1;
-    extra += " · +1 突破券";
-  }
+  const extra = " · +" + pay + " 小人幣";
   saveWeapons();
   renderArmory();
   return extra;
+}
+
+// Levels mode: every 5 levels cleared pays one breakthrough ticket.
+function grantLevelReward(clearedCount) {
+  if (clearedCount % 5 !== 0) return;
+  weaponState.tickets += 1;
+  saveWeapons();
+  renderArmory();
+  showToast("每5關完成 +1 突破券");
+}
+
+// Practice ladder: the very first full 20-level clear pays one ticket, once per save.
+function grantUnlimitedFirst(kind) {
+  if (kind !== "win" || weaponState.firstUnlimited) return "";
+  weaponState.firstUnlimited = 1;
+  weaponState.tickets += 1;
+  saveWeapons();
+  renderArmory();
+  return " · +1 突破券（無限制首次通場）";
 }
 
 const AD_COINS = 10;
